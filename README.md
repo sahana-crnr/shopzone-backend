@@ -8,6 +8,7 @@ ShopZone Backend is a Django REST API that powers authentication, product catalo
 - Public product listing and product detail endpoints
 - Filterable and paginated product catalog
 - Authenticated cart and wishlist APIs
+- Backend coupon validation and checkout/order APIs
 - Ownership enforcement so users can only access their own cart and wishlist records
 - Database migrations and product seeding support
 
@@ -75,6 +76,12 @@ Seed the product catalog:
 python manage.py seed_products
 ```
 
+Seed the default coupons:
+
+```bash
+python manage.py seed_coupons
+```
+
 ## Run the Server
 
 Start the development server:
@@ -113,6 +120,11 @@ python manage.py test
 - `GET /api/wishlist/`
 - `POST /api/wishlist/`
 - `DELETE /api/wishlist/items/{id}/`
+- `GET /api/coupons/`
+- `POST /api/coupons/validate/`
+- `POST /api/checkout/`
+- `GET /api/orders/`
+- `GET /api/orders/{id}/`
 
 ## Frontend Integration
 
@@ -129,7 +141,8 @@ http://127.0.0.1:3000
 
 - `python manage.py migrate` completes successfully
 - `python manage.py seed_products` creates or updates catalog records
+- `python manage.py seed_coupons` creates or updates default coupons
 - `python manage.py test` passes
 - `GET /api/products/` returns product data
 - Authenticated cart and wishlist requests return the current user's data only
-
+- Checkout creates an order and clears the cart

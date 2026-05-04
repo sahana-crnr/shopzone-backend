@@ -5,7 +5,7 @@ from rest_framework import serializers
 
 from catalog.serializers import ProductSerializer
 
-from .models import Cart, CartItem, WishlistItem
+from .models import Cart, CartItem, Coupon, Order, OrderItem, WishlistItem
 
 
 User = get_user_model()
@@ -78,3 +78,71 @@ class WishlistItemCreateSerializer(serializers.Serializer):
         except Product.DoesNotExist as exc:
             raise serializers.ValidationError("Product not found.") from exc
 
+
+class CouponSerializer(serializers.ModelSerializer):
+    discountPercent = serializers.IntegerField(source="discount_percent", read_only=True)
+    minOrderAmount = serializers.IntegerField(source="min_order_amount", read_only=True)
+    isActive = serializers.BooleanField(source="is_active", read_only=True)
+
+    class Meta:
+        model = Coupon
+        fields = ["id", "code", "discountPercent", "minOrderAmount", "isActive"]
+        read_only_fields = fields
+
+
+class CouponCodeSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=32)
+
+
+class CheckoutSerializer(serializers.Serializer):
+    coupon_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        max_length=32,
+    )
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    product = ProductSerializer(read_only=True)
+    productName = serializers.CharField(source="product_name", read_only=True)
+    productImage = serializers.CharField(source="product_image", read_only=True)
+    unitPrice = serializers.IntegerField(source="unit_price", read_only=True)
+    lineTotal = serializers.IntegerField(source="line_total", read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = [
+            "id",
+            "product",
+            "productName",
+            "productImage",
+            "unitPrice",
+            "quantity",
+            "lineTotal",
+        ]
+        read_only_fields = fields
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    coupon = CouponSerializer(read_only=True)
+    items = OrderItemSerializer(many=True, read_only=True)
+    discountAmount = serializers.IntegerField(source="discount_amount", read_only=True)
+    totalAmount = serializers.IntegerField(source="total_amount", read_only=True)
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "status",
+            "coupon",
+            "subtotal",
+            "discountAmount",
+            "totalAmount",
+            "items",
+            "createdAt",
+            "updatedAt",
+        ]
+        read_only_fields = fields
