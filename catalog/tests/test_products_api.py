@@ -11,6 +11,7 @@ class ProductApiTests(APITestCase):
 
         self.product_1 = Product.objects.create(
             name="Alpha Shoes",
+            category="Fashion & Apparel",
             size="EU42",
             color="Black",
             description="Running shoes",
@@ -23,6 +24,7 @@ class ProductApiTests(APITestCase):
         )
         self.product_2 = Product.objects.create(
             name="Beta Headphones",
+            category="Electronics",
             size="Standard",
             color="White",
             description="Wireless audio",
@@ -35,6 +37,7 @@ class ProductApiTests(APITestCase):
         )
         self.product_3 = Product.objects.create(
             name="Gamma Lamp",
+            category="Home & Furniture",
             size="Standard",
             color="Blue",
             description="Desk light",
@@ -68,6 +71,13 @@ class ProductApiTests(APITestCase):
         self.assertEqual(response.data["totalCount"], 1)
         self.assertFalse(response.data["has_more"])
 
+    def test_list_can_filter_by_category(self):
+        response = self.client.get(self.list_url, {"category": "Electronics"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["name"], "Beta Headphones")
+
     def test_detail_returns_single_product(self):
         response = self.client.get(
             reverse("product-detail", kwargs={"pk": self.product_2.pk})
@@ -80,4 +90,3 @@ class ProductApiTests(APITestCase):
         response = self.client.get(reverse("product-detail", kwargs={"pk": 9999}))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-

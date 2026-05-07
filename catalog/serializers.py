@@ -15,6 +15,7 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "category",
             "size",
             "color",
             "description",
@@ -34,6 +35,7 @@ class ProductQuerySerializer(serializers.Serializer):
     max_price = serializers.IntegerField(required=False, min_value=0)
     min_rating = serializers.FloatField(required=False, min_value=0, max_value=5)
     min_reviews = serializers.IntegerField(required=False, min_value=0)
+    category = serializers.CharField(required=False, allow_blank=True)
     sort = serializers.ChoiceField(
         required=False,
         choices=[
@@ -56,4 +58,3 @@ class ProductQuerySerializer(serializers.Serializer):
     )
     page = serializers.IntegerField(required=False, min_value=1, default=1)
     page_size = serializers.IntegerField(required=False, min_value=1, max_value=100, default=12)
-

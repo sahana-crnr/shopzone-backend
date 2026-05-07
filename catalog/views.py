@@ -34,6 +34,7 @@ def _normalize_query_params(query_params):
         "max_price": query_params.get("max_price") or query_params.get("maxPrice"),
         "min_rating": query_params.get("min_rating") or query_params.get("minRating"),
         "min_reviews": query_params.get("min_reviews") or query_params.get("minReviews"),
+        "category": query_params.get("category") or query_params.get("categoryName"),
         "sort": query_params.get("sort") or query_params.get("sortBy") or "default",
         "page": query_params.get("page") or query_params.get("pageNumber"),
         "page_size": query_params.get("page_size") or query_params.get("pageSize"),
@@ -68,6 +69,7 @@ class ProductListView(generics.GenericAPIView):
         max_price = filters.get("max_price")
         min_rating = filters.get("min_rating")
         min_reviews = filters.get("min_reviews")
+        category = filters.get("category", "").strip()
 
         if min_price is not None:
             queryset = queryset.filter(price__gte=min_price)
@@ -77,6 +79,8 @@ class ProductListView(generics.GenericAPIView):
             queryset = queryset.filter(rating__gte=min_rating)
         if min_reviews is not None:
             queryset = queryset.filter(reviews_count__gte=min_reviews)
+        if category:
+            queryset = queryset.filter(category__iexact=category)
 
         sort_key = filters.get("sort", "default")
         queryset = queryset.order_by(ORDERING_MAP.get(sort_key, "id"))
@@ -110,4 +114,3 @@ class ProductDetailView(generics.RetrieveAPIView):
     permission_classes = [AllowAny]
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
-
