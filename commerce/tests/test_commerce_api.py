@@ -185,10 +185,14 @@ class CommerceApiTests(APITestCase):
 
         response = self.client.post(
             self.checkout_url,
-            {"coupon_code": "SAVE10"},
+            {
+                "coupon_code": "SAVE10",
+                "shipping_address": "221B Baker Street, London",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["shippingAddress"], "221B Baker Street, London")
         self.assertEqual(response.data["subtotal"], 2000)
         self.assertEqual(response.data["discountAmount"], 200)
         self.assertEqual(response.data["totalAmount"], 1800)

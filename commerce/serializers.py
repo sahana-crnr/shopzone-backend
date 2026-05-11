@@ -95,6 +95,7 @@ class CouponCodeSerializer(serializers.Serializer):
 
 
 class CheckoutSerializer(serializers.Serializer):
+    shipping_address = serializers.CharField(max_length=500, trim_whitespace=True)
     coupon_code = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -127,6 +128,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 class OrderSerializer(serializers.ModelSerializer):
     coupon = CouponSerializer(read_only=True)
     items = OrderItemSerializer(many=True, read_only=True)
+    shippingAddress = serializers.CharField(source="shipping_address", read_only=True)
     discountAmount = serializers.IntegerField(source="discount_amount", read_only=True)
     totalAmount = serializers.IntegerField(source="total_amount", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
@@ -136,6 +138,7 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             "id",
+            "shippingAddress",
             "status",
             "coupon",
             "subtotal",

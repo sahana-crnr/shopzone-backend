@@ -186,6 +186,7 @@ class CheckoutView(APIView):
         order = Order.objects.create(
             user=request.user,
             coupon=coupon,
+            shipping_address=serializer.validated_data["shipping_address"],
             subtotal=subtotal,
             discount_amount=discount_amount,
             total_amount=total_amount,
