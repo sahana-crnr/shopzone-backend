@@ -1,0 +1,56 @@
+========================================================
+  BACKEND SETUP - INSTALL DEPENDENCIES
+========================================================
+
+You need to install Python dependencies first.
+
+Option 1: Run the batch script (EASIEST)
+────────────────────────────────────────
+Open Command Prompt and run:
+  
+  cd "C:\Users\Vasant\OneDrive\Desktop\react-login-ui\backend-repo"
+  install-dependencies.bat
+
+Or double-click the file: install-dependencies.bat
+
+
+Option 2: Manual installation
+──────────────────────────────
+Open Command Prompt and run:
+
+  cd "C:\Users\Vasant\OneDrive\Desktop\react-login-ui\backend-repo"
+  python -m pip install -r requirements.txt
+
+
+Option 3: Using pip directly
+─────────────────────────────
+  pip install Django==6.0.4
+  pip install djangorestframework==3.17.1
+  pip install djangorestframework-simplejwt==5.5.1
+  pip install django-cors-headers==4.9.0
+  pip install python-dotenv==1.2.2
+  pip install "gunicorn>=23.0.0,<24"
+  pip install "psycopg[binary]>=3.2.0,<4"
+
+
+Once installed, run these commands:
+──────────────────────────────────
+
+1. Apply database migration:
+   python manage.py migrate
+
+2. Load product data with carousel images:
+   python manage.py seed_products
+
+3. Run development server:
+   python manage.py runserver
+
+4. In another terminal, start frontend:
+   cd frontend-repo
+   npm start
+
+
+Then visit: http://localhost:3000/product/1
+You should see the image carousel!
+
+========================================================

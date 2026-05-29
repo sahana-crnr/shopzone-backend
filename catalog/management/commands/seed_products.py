@@ -4,7 +4,8 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from catalog.models import Product
+from catalog.models import Product, ProductTag
+from catalog.search_terms import infer_product_tag_names
 
 
 def _infer_category(item):
@@ -79,7 +80,7 @@ def _infer_category(item):
 
 
 class Command(BaseCommand):
-    help = "Seed the product catalog from catalog/data/products.json."
+    help = "Seed the product catalog and tags from catalog/data/products.json."
 
     def handle(self, *args, **options):
         source_file = Path(__file__).resolve().parents[2] / "data" / "products.json"
@@ -95,6 +96,18 @@ class Command(BaseCommand):
 
         created_count = 0
         updated_count = 0
+        tag_cache: dict[str, ProductTag] = {}
+
+        def get_tag(tag_name: str) -> ProductTag:
+            normalized = tag_name.strip().lower()
+            if not normalized:
+                raise CommandError("Tag names must not be empty.")
+
+            if normalized not in tag_cache:
+                tag_cache[normalized], _ = ProductTag.objects.get_or_create(
+                    name=normalized,
+                )
+            return tag_cache[normalized]
 
         with transaction.atomic():
             for item in raw_products:
@@ -109,16 +122,30 @@ class Command(BaseCommand):
                     "description": item.get("description", ""),
                     "price": item.get("price", 0),
                     "image": item.get("image", ""),
+                    "images": item.get("images", [item.get("image", "")] if item.get("image") else []),
                     "original_price": item.get("originalPrice"),
                     "rating": item.get("rating", 0),
                     "ratings_count": item.get("ratingsCount", 0),
                     "reviews_count": item.get("reviewsCount", 0),
                 }
 
-                _, created = Product.objects.update_or_create(
+                product, created = Product.objects.update_or_create(
                     id=item["id"],
                     defaults=defaults,
                 )
+
+                inferred_tag_names = infer_product_tag_names(
+                    item.get("name", ""),
+                    item.get("description", ""),
+                    item.get("category", ""),
+                    item.get("color", ""),
+                    item.get("size", ""),
+                )
+                if inferred_tag_names:
+                    product.tags.set([get_tag(tag_name) for tag_name in inferred_tag_names])
+                else:
+                    product.tags.clear()
+
                 if created:
                     created_count += 1
                 else:

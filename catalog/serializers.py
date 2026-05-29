@@ -4,11 +4,17 @@ from .models import Product
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    images = serializers.SerializerMethodField()
     originalPrice = serializers.IntegerField(
         source="original_price", required=False, allow_null=True
     )
     ratingsCount = serializers.IntegerField(source="ratings_count", read_only=True)
     reviewsCount = serializers.IntegerField(source="reviews_count", read_only=True)
+    tags = serializers.SlugRelatedField(
+        many=True,
+        read_only=True,
+        slug_field="name",
+    )
 
     class Meta:
         model = Product
@@ -21,12 +27,24 @@ class ProductSerializer(serializers.ModelSerializer):
             "description",
             "price",
             "image",
+            "images",
             "originalPrice",
             "rating",
             "ratingsCount",
             "reviewsCount",
+            "tags",
         ]
         read_only_fields = ["id"]
+
+    def get_images(self, product):
+        images = product.images if isinstance(product.images, list) else []
+        images = [image for image in images if image]
+
+        if images:
+            return images
+        if product.image:
+            return [product.image]
+        return []
 
 
 class ProductQuerySerializer(serializers.Serializer):

@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from .models import Product
 from .serializers import ProductQuerySerializer, ProductSerializer
+from .search_terms import expand_search_terms
 
 
 ORDERING_MAP = {
@@ -58,12 +59,16 @@ class ProductListView(generics.GenericAPIView):
         search = filters.get("search", "").strip()
         if search:
             for term in search.split():
+                expanded_terms = expand_search_terms(term)
                 queryset = queryset.filter(
                     Q(name__icontains=term)
                     | Q(description__icontains=term)
                     | Q(color__icontains=term)
                     | Q(size__icontains=term)
+                    | Q(category__icontains=term)
+                    | Q(tags__name__in=expanded_terms)
                 )
+            queryset = queryset.distinct()
 
         min_price = filters.get("min_price")
         max_price = filters.get("max_price")
