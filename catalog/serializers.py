@@ -1,9 +1,13 @@
+from urllib.parse import quote_plus
+
 from rest_framework import serializers
 
 from .models import Product
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    carousel_image_count = 6
+    blank_image_start = 4
     images = serializers.SerializerMethodField()
     originalPrice = serializers.IntegerField(
         source="original_price", required=False, allow_null=True
@@ -40,11 +44,23 @@ class ProductSerializer(serializers.ModelSerializer):
         images = product.images if isinstance(product.images, list) else []
         images = [image for image in images if image]
 
-        if images:
-            return images
-        if product.image:
-            return [product.image]
-        return []
+        if product.image and product.image not in images:
+            images.insert(0, product.image)
+
+        label = quote_plus(product.name or "Product")
+        while len(images) < 3:
+            view_number = len(images) + 1
+            images.append(
+                f"https://placehold.co/400x400?text={label}+View+{view_number}"
+            )
+
+        images = images[:3]
+        images.extend(
+            f"https://placehold.co/400x400/ffffff/ffffff.png?blank={slot}"
+            for slot in range(self.blank_image_start, self.carousel_image_count + 1)
+        )
+
+        return images[: self.carousel_image_count]
 
 
 class ProductQuerySerializer(serializers.Serializer):

@@ -1,8 +1,5 @@
-from django.db import OperationalError, transaction
-from django.db.models import F
-from django.shortcuts import get_object_or_404
-from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from django.db import IntegrityError, transaction
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -11,139 +8,123 @@ from catalog.models import Product
 
 from .models import Cart, CartItem, Coupon, Order, OrderItem, WishlistItem
 from .serializers import (
-    CheckoutSerializer,
-    CouponCodeSerializer,
-    CouponSerializer,
-    CartItemSerializer,
     CartItemUpdateSerializer,
     CartItemUpsertSerializer,
     CartSerializer,
+    CheckoutSerializer,
+    CouponCodeSerializer,
+    CouponSerializer,
     OrderSerializer,
     WishlistItemCreateSerializer,
     WishlistItemSerializer,
 )
 
 
-def _get_or_create_cart(user):
-    cart, _ = Cart.objects.get_or_create(user=user)
-    return cart
+def _cart_for_user(user):
+    return Cart.objects.get_or_create(user=user)[0]
 
 
-def _get_coupon_or_404(code):
-    normalized_code = code.strip()
-    try:
-        return Coupon.objects.get(code__iexact=normalized_code, is_active=True)
-    except Coupon.DoesNotExist as exc:
-        raise ValidationError({"coupon_code": "Invalid or inactive coupon."}) from exc
+def _cart_queryset():
+    return Cart.objects.prefetch_related("items__product__tags")
 
 
-def _calculate_order_totals(cart_items, coupon=None):
-    subtotal = sum(item.quantity * item.product.price for item in cart_items)
-    discount_amount = 0
-
-    if coupon is not None:
-        if coupon.min_order_amount and subtotal < coupon.min_order_amount:
-            raise ValidationError(
-                {
-                    "coupon_code": (
-                        f"{coupon.code} requires a minimum order amount of "
-                        f"₹{coupon.min_order_amount}."
-                    )
-                }
-            )
-        discount_amount = (subtotal * coupon.discount_percent) // 100
-
-    total_amount = max(subtotal - discount_amount, 0)
-    return subtotal, discount_amount, total_amount
+def _order_queryset():
+    return Order.objects.select_related("coupon").prefetch_related("items__product__tags")
 
 
 class CartView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        cart = _get_or_create_cart(request.user)
+        cart = _cart_queryset().filter(user=request.user).first() or _cart_for_user(
+            request.user
+        )
         return Response(CartSerializer(cart).data)
 
-    @transaction.atomic
     def post(self, request):
         serializer = CartItemUpsertSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         product = Product.objects.get(pk=serializer.validated_data["product_id"])
-        quantity = serializer.validated_data.get("quantity", 1)
-        cart = _get_or_create_cart(request.user)
+        quantity = serializer.validated_data["quantity"]
+        cart = _cart_for_user(request.user)
 
-        item, created = CartItem.objects.select_for_update().get_or_create(
+        cart_item, created = CartItem.objects.get_or_create(
             cart=cart,
             product=product,
             defaults={"quantity": quantity},
         )
-
         if not created:
-            CartItem.objects.filter(pk=item.pk).update(quantity=F("quantity") + quantity)
-            item.refresh_from_db()
+            cart_item.quantity += quantity
+            cart_item.save(update_fields=["quantity", "updated_at"])
 
-        payload = CartSerializer(cart).data
-        return Response(
-            payload,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-        )
+        cart = _cart_queryset().get(pk=cart.pk)
+        return Response(CartSerializer(cart).data, status=status.HTTP_201_CREATED)
 
 
-class CartItemDetailView(APIView):
+class CartItemDetailView(generics.UpdateAPIView, generics.DestroyAPIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = CartItemUpdateSerializer
+    http_method_names = ["patch", "delete", "options"]
 
-    def patch(self, request, pk):
-        item = get_object_or_404(CartItem, pk=pk, cart__user=request.user)
-        serializer = CartItemUpdateSerializer(data=request.data)
+    def get_queryset(self):
+        return CartItem.objects.filter(cart__user=self.request.user)
+
+    def patch(self, request, *args, **kwargs):
+        cart_item = self.get_object()
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        item.quantity = serializer.validated_data["quantity"]
-        item.save(update_fields=["quantity", "updated_at"])
-        return Response(CartItemSerializer(item).data)
-
-    def delete(self, request, pk):
-        item = get_object_or_404(CartItem, pk=pk, cart__user=request.user)
-        item.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        cart_item.quantity = serializer.validated_data["quantity"]
+        cart_item.save(update_fields=["quantity", "updated_at"])
+        return Response({"id": cart_item.id, "quantity": cart_item.quantity})
 
 
 class WishlistView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        items = WishlistItem.objects.filter(user=request.user).select_related("product")
+        items = WishlistItem.objects.filter(user=request.user).select_related(
+            "product"
+        ).prefetch_related("product__tags")
         return Response(WishlistItemSerializer(items, many=True).data)
 
     def post(self, request):
         serializer = WishlistItemCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        product = Product.objects.get(pk=serializer.validated_data["product_id"])
 
-        item, created = WishlistItem.objects.get_or_create(
-            user=request.user,
-            product=product,
+        product = Product.objects.get(pk=serializer.validated_data["product_id"])
+        try:
+            item, _created = WishlistItem.objects.get_or_create(
+                user=request.user,
+                product=product,
+            )
+        except IntegrityError:
+            item = WishlistItem.objects.get(user=request.user, product=product)
+
+        item = (
+            WishlistItem.objects.select_related("product")
+            .prefetch_related("product__tags")
+            .get(pk=item.pk)
         )
         return Response(
             WishlistItemSerializer(item).data,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+            status=status.HTTP_201_CREATED,
         )
 
 
-class WishlistItemDetailView(APIView):
+class WishlistItemDetailView(generics.DestroyAPIView):
     permission_classes = [IsAuthenticated]
 
-    def delete(self, request, pk):
-        item = get_object_or_404(WishlistItem, pk=pk, user=request.user)
-        item.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    def get_queryset(self):
+        return WishlistItem.objects.filter(user=self.request.user)
 
 
-class CouponListView(APIView):
+class CouponListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = CouponSerializer
 
-    def get(self, request):
-        coupons = Coupon.objects.filter(is_active=True).order_by("code")
-        return Response(CouponSerializer(coupons, many=True).data)
+    def get_queryset(self):
+        return Coupon.objects.filter(is_active=True)
 
 
 class CouponValidateView(APIView):
@@ -152,100 +133,110 @@ class CouponValidateView(APIView):
     def post(self, request):
         serializer = CouponCodeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        coupon = _get_coupon_or_404(serializer.validated_data["code"])
+        code = serializer.validated_data["code"].strip().upper()
+
+        try:
+            coupon = Coupon.objects.get(code__iexact=code, is_active=True)
+        except Coupon.DoesNotExist:
+            return Response(
+                {"detail": "Invalid discount code."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         return Response(CouponSerializer(coupon).data)
 
 
 class CheckoutView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request):
-        try:
-            with transaction.atomic():
-                serializer = CheckoutSerializer(data=request.data)
-                serializer.is_valid(raise_exception=True)
+        serializer = CheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-                cart = _get_or_create_cart(request.user)
-                cart_items = list(cart.items.select_related("product"))
-
-                if not cart_items:
-                    return Response(
-                        {"detail": "Cart is empty."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-                coupon = None
-                coupon_code = serializer.validated_data.get("coupon_code")
-                if coupon_code:
-                    coupon = _get_coupon_or_404(coupon_code)
-
-                subtotal, discount_amount, total_amount = _calculate_order_totals(
-                    cart_items,
-                    coupon,
-                )
-
-                order = Order.objects.create(
-                    user=request.user,
-                    coupon=coupon,
-                    shipping_address=serializer.validated_data["shipping_address"],
-                    subtotal=subtotal,
-                    discount_amount=discount_amount,
-                    total_amount=total_amount,
-                )
-
-                order_items = [
-                    OrderItem(
-                        order=order,
-                        product=item.product,
-                        product_name=item.product.name,
-                        product_image=item.product.image,
-                        unit_price=item.product.price,
-                        quantity=item.quantity,
-                        line_total=item.quantity * item.product.price,
-                    )
-                    for item in cart_items
-                ]
-                OrderItem.objects.bulk_create(order_items)
-                cart.items.all().delete()
-
-                order = (
-                    Order.objects.select_related("coupon")
-                    .prefetch_related("items__product")
-                    .get(pk=order.pk)
-                )
-                return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
-        except OperationalError:
+        cart = (
+            Cart.objects.select_for_update()
+            .filter(user=request.user)
+            .prefetch_related("items__product")
+            .first()
+        )
+        if not cart or not cart.items.exists():
             return Response(
-                {
-                    "detail": (
-                        "Checkout is temporarily unavailable. Please try again in a "
-                        "moment."
-                    )
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                {"detail": "Cart is empty."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
+        items = list(cart.items.select_related("product"))
+        subtotal = sum(item.quantity * item.product.price for item in items)
 
-class OrderListView(APIView):
-    permission_classes = [IsAuthenticated]
+        coupon = None
+        coupon_code = serializer.validated_data.get("coupon_code")
+        if coupon_code:
+            try:
+                coupon = Coupon.objects.get(
+                    code__iexact=coupon_code.strip(),
+                    is_active=True,
+                )
+            except Coupon.DoesNotExist:
+                return Response(
+                    {"detail": "Invalid discount code."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-    def get(self, request):
-        orders = (
-            Order.objects.filter(user=request.user)
-            .select_related("coupon")
-            .prefetch_related("items__product")
-            .order_by("-id")
-        )
-        return Response(OrderSerializer(orders, many=True).data)
+            if subtotal < coupon.min_order_amount:
+                return Response(
+                    {
+                        "detail": (
+                            "This coupon requires a minimum order of "
+                            f"{coupon.min_order_amount}."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
+        discount_amount = 0
+        if coupon:
+            discount_amount = round(subtotal * coupon.discount_percent / 100)
 
-class OrderDetailView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, pk):
-        order = get_object_or_404(
-            Order.objects.select_related("coupon").prefetch_related("items__product"),
-            pk=pk,
+        order = Order.objects.create(
             user=request.user,
+            coupon=coupon,
+            shipping_address=serializer.validated_data["shipping_address"],
+            subtotal=subtotal,
+            discount_amount=discount_amount,
+            total_amount=subtotal - discount_amount,
         )
-        return Response(OrderSerializer(order).data)
+
+        order_items = [
+            OrderItem(
+                order=order,
+                product=item.product,
+                product_name=item.product.name,
+                product_image=item.product.image,
+                unit_price=item.product.price,
+                quantity=item.quantity,
+                line_total=item.quantity * item.product.price,
+            )
+            for item in items
+        ]
+        OrderItem.objects.bulk_create(order_items)
+        cart.items.all().delete()
+
+        order = _order_queryset().get(pk=order.pk)
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+
+class OrderListView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = OrderSerializer
+
+    def get_queryset(self):
+        return _order_queryset().filter(user=self.request.user)
+
+
+class OrderDetailView(generics.RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = OrderSerializer
+
+    def get_queryset(self):
+        return _order_queryset().filter(user=self.request.user)
