@@ -2,7 +2,7 @@ from urllib.parse import quote_plus
 
 from rest_framework import serializers
 
-from .models import Product
+from .models import Product, ProductReview
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -92,3 +92,23 @@ class ProductQuerySerializer(serializers.Serializer):
     )
     page = serializers.IntegerField(required=False, min_value=1, default=1)
     page_size = serializers.IntegerField(required=False, min_value=1, max_value=100, default=12)
+
+
+class ProductReviewSerializer(serializers.ModelSerializer):
+    author = serializers.CharField(source="user.name", read_only=True)
+    productId = serializers.IntegerField(source="product_id", read_only=True)
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+
+    class Meta:
+        model = ProductReview
+        fields = ["id", "productId", "author", "rating", "comment", "image", "createdAt"]
+        read_only_fields = ["id", "productId", "author", "createdAt"]
+
+
+class ProductReviewCreateSerializer(serializers.ModelSerializer):
+    rating = serializers.IntegerField(min_value=1, max_value=5)
+    image = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = ProductReview
+        fields = ["rating", "comment", "image"]

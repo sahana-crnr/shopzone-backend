@@ -1,12 +1,18 @@
 from django.core.paginator import EmptyPage, Paginator
-from django.db.models import Q
-from rest_framework import generics
+from django.db.models import Avg, Q
+from django.shortcuts import get_object_or_404
+from rest_framework import generics, status
 from rest_framework.exceptions import NotFound
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Product
-from .serializers import ProductQuerySerializer, ProductSerializer
+from .models import Product, ProductReview
+from .serializers import (
+    ProductQuerySerializer,
+    ProductReviewCreateSerializer,
+    ProductReviewSerializer,
+    ProductSerializer,
+)
 from .search_terms import expand_search_terms
 
 
@@ -119,3 +125,43 @@ class ProductDetailView(generics.RetrieveAPIView):
     permission_classes = [AllowAny]
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
+
+
+def _refresh_product_review_totals(product):
+    summary = product.customer_reviews.aggregate(
+        average_rating=Avg("rating"),
+    )
+    product.reviews_count = product.customer_reviews.count()
+    product.ratings_count = product.reviews_count
+    product.rating = round(summary["average_rating"] or 0, 1)
+    product.save(update_fields=["reviews_count", "ratings_count", "rating", "updated_at"])
+
+
+class ProductReviewListCreateView(generics.GenericAPIView):
+    serializer_class = ProductReviewSerializer
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    def get_product(self):
+        return get_object_or_404(Product, pk=self.kwargs["pk"])
+
+    def get_queryset(self):
+        return ProductReview.objects.filter(product_id=self.kwargs["pk"]).select_related(
+            "user",
+            "product",
+        )
+
+    def get(self, request, *args, **kwargs):
+        reviews = self.get_queryset()
+        return Response(ProductReviewSerializer(reviews, many=True).data)
+
+    def post(self, request, *args, **kwargs):
+        product = self.get_product()
+        serializer = ProductReviewCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        review = serializer.save(product=product, user=request.user)
+        _refresh_product_review_totals(product)
+        return Response(ProductReviewSerializer(review).data, status=status.HTTP_201_CREATED)
