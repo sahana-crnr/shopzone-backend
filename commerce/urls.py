@@ -1,29 +1,30 @@
 from django.urls import path
-
 from .views import (
-    CartItemDetailView,
+    AcceptDeliveryView,
     CartView,
+    CartItemDetailView,
     CheckoutView,
     CouponListView,
-    CouponValidateView,
+    DeliveryOrdersListView,
     OrderDetailView,
     OrderListView,
-    WishlistItemDetailView,
+    UpdateOrderStatusView,
+    ValidateCouponView,
     WishlistView,
+    WishlistItemDetailView,
 )
 
 urlpatterns = [
     path("cart/", CartView.as_view(), name="cart"),
-    path("cart/items/<int:pk>/", CartItemDetailView.as_view(), name="cart-item-detail"),
-    path("coupons/", CouponListView.as_view(), name="coupon-list"),
-    path("coupons/validate/", CouponValidateView.as_view(), name="coupon-validate"),
-    path("checkout/", CheckoutView.as_view(), name="checkout"),
-    path("orders/", OrderListView.as_view(), name="orders"),
-    path("orders/<int:pk>/", OrderDetailView.as_view(), name="order-detail"),
+    path("cart/items/<int:item_id>/", CartItemDetailView.as_view(), name="cart_item_detail"),
     path("wishlist/", WishlistView.as_view(), name="wishlist"),
-    path(
-        "wishlist/items/<int:pk>/",
-        WishlistItemDetailView.as_view(),
-        name="wishlist-item-detail",
-    ),
+    path("wishlist/items/<int:item_id>/", WishlistItemDetailView.as_view(), name="wishlist_item_detail"),
+    path("coupons/", CouponListView.as_view(), name="coupon_list"),
+    path("coupons/validate/", ValidateCouponView.as_view(), name="validate_coupon"),
+    path("checkout/", CheckoutView.as_view(), name="checkout"),
+    path("orders/", OrderListView.as_view(), name="order_list"),
+    path("orders/deliveries/", DeliveryOrdersListView.as_view(), name="delivery_orders_list"),
+    path("orders/<int:order_id>/", OrderDetailView.as_view(), name="order_detail"),
+    path("orders/<int:order_id>/accept_delivery/", AcceptDeliveryView.as_view(), name="accept_delivery"),
+    path("orders/<int:order_id>/status/", UpdateOrderStatusView.as_view(), name="update_order_status"),
 ]

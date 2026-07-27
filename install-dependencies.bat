@@ -1,5 +1,4 @@
 @echo off
-cd /d "C:\Users\Vasant\OneDrive\Desktop\react-login-ui\backend-repo"
 echo Installing Python dependencies...
 python -m pip install -r requirements.txt
 echo.

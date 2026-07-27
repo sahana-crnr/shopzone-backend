@@ -7,6 +7,7 @@ class ProductTag(models.Model):
 
     class Meta:
         ordering = ["name"]
+        db_table = "product_tags"
 
     def __str__(self):
         return self.name
@@ -35,6 +36,7 @@ class Product(models.Model):
 
     class Meta:
         ordering = ["id"]
+        db_table = "products"
 
     def __str__(self):
         return self.name
@@ -58,6 +60,7 @@ class ProductReview(models.Model):
 
     class Meta:
         ordering = ["-id"]
+        db_table = "product_reviews"
 
     def __str__(self):
         return f"{self.product} review by {self.user}"

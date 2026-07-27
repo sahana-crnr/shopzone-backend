@@ -1,167 +1,135 @@
-from django.core.paginator import EmptyPage, Paginator
-from django.db.models import Avg, Q
-from django.shortcuts import get_object_or_404
-from rest_framework import generics, status
-from rest_framework.exceptions import NotFound
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-
+from django.db.models import Q
 from .models import Product, ProductReview
-from .serializers import (
-    ProductQuerySerializer,
-    ProductReviewCreateSerializer,
-    ProductReviewSerializer,
-    ProductSerializer,
-)
-from .search_terms import expand_search_terms
+from .serializers import ProductSerializer, ProductReviewSerializer
 
 
-ORDERING_MAP = {
-    "default": "id",
-    "price-asc": "price",
-    "price-desc": "-price",
-    "rating-desc": "-rating",
-    "name-asc": "name",
-    "name-desc": "-name",
-    "price": "price",
-    "-price": "-price",
-    "rating": "rating",
-    "-rating": "-rating",
-    "reviews": "reviews_count",
-    "-reviews": "-reviews_count",
-    "name": "name",
-    "-name": "-name",
-}
+class CustomPageNumberPagination(PageNumberPagination):
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def get_paginated_response(self, data):
+        total_pages = self.page.paginator.num_pages
+        current_page = self.page.number
+        return Response({
+            'count': self.page.paginator.count,
+            'page': current_page,
+            'page_size': self.get_page_size(self.request),
+            'total_pages': total_pages,
+            'has_more': current_page < total_pages,
+            'results': data
+        })
 
 
-def _normalize_query_params(query_params):
-    mapping = {
-        "search": query_params.get("search") or query_params.get("searchTerm") or "",
-        "min_price": query_params.get("min_price") or query_params.get("minPrice"),
-        "max_price": query_params.get("max_price") or query_params.get("maxPrice"),
-        "min_rating": query_params.get("min_rating") or query_params.get("minRating"),
-        "min_reviews": query_params.get("min_reviews") or query_params.get("minReviews"),
-        "category": query_params.get("category") or query_params.get("categoryName"),
-        "sort": query_params.get("sort") or query_params.get("sortBy") or "default",
-        "page": query_params.get("page") or query_params.get("pageNumber"),
-        "page_size": query_params.get("page_size") or query_params.get("pageSize"),
-    }
-    return {key: value for key, value in mapping.items() if value not in (None, "")}
-
-
-class ProductListView(generics.GenericAPIView):
-    permission_classes = [AllowAny]
+class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ProductSerializer
+    pagination_class = CustomPageNumberPagination
 
-    def get(self, request):
-        query_serializer = ProductQuerySerializer(
-            data=_normalize_query_params(request.query_params)
-        )
-        query_serializer.is_valid(raise_exception=True)
-        filters = query_serializer.validated_data
-
+    def get_queryset(self):
         queryset = Product.objects.all()
+        params = self.request.query_params
 
-        search = filters.get("search", "").strip()
+        search = params.get('search')
         if search:
-            for term in search.split():
-                expanded_terms = expand_search_terms(term)
-                queryset = queryset.filter(
-                    Q(name__icontains=term)
-                    | Q(description__icontains=term)
-                    | Q(color__icontains=term)
-                    | Q(size__icontains=term)
-                    | Q(category__icontains=term)
-                    | Q(tags__name__in=expanded_terms)
-                )
-            queryset = queryset.distinct()
+            queryset = queryset.filter(
+                Q(name__icontains=search) |
+                Q(description__icontains=search) |
+                Q(category__icontains=search)
+            )
 
-        min_price = filters.get("min_price")
-        max_price = filters.get("max_price")
-        min_rating = filters.get("min_rating")
-        min_reviews = filters.get("min_reviews")
-        category = filters.get("category", "").strip()
-
-        if min_price is not None:
-            queryset = queryset.filter(price__gte=min_price)
-        if max_price is not None:
-            queryset = queryset.filter(price__lte=max_price)
-        if min_rating is not None:
-            queryset = queryset.filter(rating__gte=min_rating)
-        if min_reviews is not None:
-            queryset = queryset.filter(reviews_count__gte=min_reviews)
+        category = params.get('category')
         if category:
             queryset = queryset.filter(category__iexact=category)
 
-        sort_key = filters.get("sort", "default")
-        queryset = queryset.order_by(ORDERING_MAP.get(sort_key, "id"))
+        min_price = params.get('min_price')
+        if min_price is not None:
+            try:
+                queryset = queryset.filter(price__gte=float(min_price))
+            except ValueError:
+                pass
 
-        page = filters.get("page", 1)
-        page_size = filters.get("page_size", 12)
-        paginator = Paginator(queryset, page_size)
+        max_price = params.get('max_price')
+        if max_price is not None:
+            try:
+                queryset = queryset.filter(price__lte=float(max_price))
+            except ValueError:
+                pass
 
-        try:
-            page_obj = paginator.page(page)
-        except EmptyPage as exc:
-            raise NotFound("Page not found.") from exc
+        min_rating = params.get('min_rating')
+        if min_rating is not None:
+            try:
+                queryset = queryset.filter(rating__gte=float(min_rating))
+            except ValueError:
+                pass
 
-        products = ProductSerializer(page_obj.object_list, many=True).data
+        sort = params.get('sort')
+        if sort == 'price_low':
+            queryset = queryset.order_by('price')
+        elif sort == 'price_high':
+            queryset = queryset.order_by('-price')
+        elif sort == 'rating':
+            queryset = queryset.order_by('-rating')
+        elif sort == 'newest':
+            queryset = queryset.order_by('-created_at')
 
-        return Response(
-            {
-                "count": paginator.count,
-                "page": page_obj.number,
-                "page_size": page_size,
-                "total_pages": paginator.num_pages,
-                "has_more": page_obj.has_next(),
-                "results": products,
-                "products": products,
-                "totalCount": paginator.count,
-            }
-        )
+        return queryset
 
+    @action(detail=True, methods=['get', 'post'], permission_classes=[AllowAny])
+    def reviews(self, request, pk=None):
+        product = self.get_object()
 
-class ProductDetailView(generics.RetrieveAPIView):
-    permission_classes = [AllowAny]
-    queryset = Product.objects.all()
-    serializer_class = ProductSerializer
+        if request.method == 'GET':
+            reviews_qs = product.customer_reviews.all()
+            serializer = ProductReviewSerializer(reviews_qs, many=True)
+            return Response(serializer.data)
 
+        if request.method == 'POST':
+            if not request.user or not request.user.is_authenticated:
+                return Response(
+                    {'detail': 'Authentication credentials were not provided.'},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
 
-def _refresh_product_review_totals(product):
-    summary = product.customer_reviews.aggregate(
-        average_rating=Avg("rating"),
-    )
-    product.reviews_count = product.customer_reviews.count()
-    product.ratings_count = product.reviews_count
-    product.rating = round(summary["average_rating"] or 0, 1)
-    product.save(update_fields=["reviews_count", "ratings_count", "rating", "updated_at"])
+            rating_val = request.data.get('rating')
+            comment = request.data.get('comment', '').strip()
+            image = request.data.get('image', '')
 
+            if rating_val is None or not comment:
+                return Response(
+                    {'detail': 'Rating and comment are required.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-class ProductReviewListCreateView(generics.GenericAPIView):
-    serializer_class = ProductReviewSerializer
+            try:
+                rating_int = int(rating_val)
+                if not (1 <= rating_int <= 5):
+                    raise ValueError()
+            except ValueError:
+                return Response(
+                    {'detail': 'Rating must be an integer between 1 and 5.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-    def get_permissions(self):
-        if self.request.method == "POST":
-            return [IsAuthenticated()]
-        return [AllowAny()]
+            review = ProductReview.objects.create(
+                product=product,
+                user=request.user,
+                rating=rating_int,
+                comment=comment,
+                image=image,
+            )
 
-    def get_product(self):
-        return get_object_or_404(Product, pk=self.kwargs["pk"])
+            reviews_qs = product.customer_reviews.all()
+            count = reviews_qs.count()
+            avg = sum(r.rating for r in reviews_qs) / count if count > 0 else 0.0
 
-    def get_queryset(self):
-        return ProductReview.objects.filter(product_id=self.kwargs["pk"]).select_related(
-            "user",
-            "product",
-        )
+            product.reviews_count = count
+            product.ratings_count = count
+            product.rating = round(avg, 1)
+            product.save()
 
-    def get(self, request, *args, **kwargs):
-        reviews = self.get_queryset()
-        return Response(ProductReviewSerializer(reviews, many=True).data)
-
-    def post(self, request, *args, **kwargs):
-        product = self.get_product()
-        serializer = ProductReviewCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        review = serializer.save(product=product, user=request.user)
-        _refresh_product_review_totals(product)
-        return Response(ProductReviewSerializer(review).data, status=status.HTTP_201_CREATED)
+            serializer = ProductReviewSerializer(review)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)

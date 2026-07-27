@@ -1,158 +1,56 @@
-import json
-from pathlib import Path
+import decimal
 
-from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.core.management.base import BaseCommand
 
-from catalog.models import Product, ProductTag
-from catalog.search_terms import infer_product_tag_names
-
-
-def _infer_category(item):
-    name = f"{item.get('name', '')} {item.get('description', '')}".lower()
-
-    electronics_terms = [
-        "headphone",
-        "smartwatch",
-        "speaker",
-        "mouse",
-        "keyboard",
-        "camera",
-        "drone",
-        "webcam",
-        "monitor",
-        "hub",
-        "powerbank",
-        "power bank",
-        "usb",
-        "harddrive",
-        "hard drive",
-        "earbud",
-        "laptop",
-    ]
-    fashion_terms = [
-        "shoe",
-        "sneaker",
-        "backpack",
-        "wallet",
-        "tape",
-        "trimmer",
-        "shaver",
-        "groomer",
-        "hair",
-        "bag",
-        "watch",
-    ]
-    home_terms = [
-        "lamp",
-        "kettle",
-        "toaster",
-        "microwave",
-        "airfryer",
-        "air fryer",
-        "blender",
-        "coffee",
-        "cooker",
-        "iron",
-        "heater",
-        "fan",
-        "purifier",
-        "dehumidifier",
-        "humidifier",
-        "lamp",
-        "massager",
-        "lamp",
-    ]
-    sports_terms = ["yoga", "mat", "sports", "outdoor", "fitness"]
-    books_terms = ["book", "magazine", "media"]
-
-    if any(term in name for term in electronics_terms):
-        return "Electronics"
-    if any(term in name for term in fashion_terms):
-        return "Fashion & Apparel"
-    if any(term in name for term in home_terms):
-        return "Home & Furniture"
-    if any(term in name for term in sports_terms):
-        return "Sports & Outdoors"
-    if any(term in name for term in books_terms):
-        return "Books & Media"
-    return ""
+from catalog.models import Product
 
 
 class Command(BaseCommand):
-    help = "Seed the product catalog and tags from catalog/data/products.json."
+    help = "Seeds the database with an initial set of products."
 
     def handle(self, *args, **options):
-        source_file = Path(__file__).resolve().parents[2] / "data" / "products.json"
+        if Product.objects.exists():
+            self.stdout.write(self.style.SUCCESS("Products already seeded. Skipping."))
+            return
 
-        if not source_file.exists():
-            raise CommandError(f"Could not find source products file: {source_file}")
+        products_to_create = [
+            {
+                "name": "Classic Leather Jacket",
+                "description": "A timeless leather jacket for any occasion.",
+                "price": decimal.Decimal("199.99"),
+                "image": "images/products/leather_jacket.jpg",
+            },
+            {
+                "name": "Wireless Bluetooth Headphones",
+                "description": "High-fidelity sound with a 20-hour battery life.",
+                "price": decimal.Decimal("89.99"),
+                "image": "images/products/headphones.jpg",
+            },
+            {
+                "name": "Modern Minimalist Watch",
+                "description": "A sleek and stylish watch that complements any outfit.",
+                "price": decimal.Decimal("149.50"),
+                "image": "images/products/watch.jpg",
+            },
+            # Add more products here if you wish
+        ]
 
-        with source_file.open("r", encoding="utf-8") as file:
-            raw_products = json.load(file)
-
-        if not isinstance(raw_products, list):
-            raise CommandError("products.json must contain a JSON array.")
-
-        created_count = 0
-        updated_count = 0
-        tag_cache: dict[str, ProductTag] = {}
-
-        def get_tag(tag_name: str) -> ProductTag:
-            normalized = tag_name.strip().lower()
-            if not normalized:
-                raise CommandError("Tag names must not be empty.")
-
-            if normalized not in tag_cache:
-                tag_cache[normalized], _ = ProductTag.objects.get_or_create(
-                    name=normalized,
-                )
-            return tag_cache[normalized]
-
-        with transaction.atomic():
-            for item in raw_products:
-                if not isinstance(item, dict) or "id" not in item or "name" not in item:
-                    continue
-
-                defaults = {
-                    "name": item.get("name", ""),
-                    "category": _infer_category(item),
-                    "size": item.get("size", ""),
-                    "color": item.get("color", ""),
-                    "description": item.get("description", ""),
-                    "price": item.get("price", 0),
-                    "image": item.get("image", ""),
-                    "images": item.get("images", [item.get("image", "")] if item.get("image") else []),
-                    "original_price": item.get("originalPrice"),
-                    "rating": item.get("rating", 0),
-                    "ratings_count": item.get("ratingsCount", 0),
-                    "reviews_count": item.get("reviewsCount", 0),
-                }
-
-                product, created = Product.objects.update_or_create(
-                    id=item["id"],
-                    defaults=defaults,
-                )
-
-                inferred_tag_names = infer_product_tag_names(
-                    item.get("name", ""),
-                    item.get("description", ""),
-                    item.get("category", ""),
-                    item.get("color", ""),
-                    item.get("size", ""),
-                )
-                if inferred_tag_names:
-                    product.tags.set([get_tag(tag_name) for tag_name in inferred_tag_names])
-                else:
-                    product.tags.clear()
-
-                if created:
-                    created_count += 1
-                else:
-                    updated_count += 1
+        for product_data in products_to_create:
+            Product.objects.update_or_create(
+                name=product_data["name"],
+                defaults={
+                    "description": product_data["description"],
+                    "price": product_data["price"],
+                    "image": product_data["image"],
+                    # Ensure all rating and review counts start at 0
+                    "rating": 0,
+                    "ratings_count": 0,
+                    "reviews_count": 0,
+                },
+            )
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Seeded products successfully. Created: {created_count}, updated: {updated_count}."
+                f"Successfully created {len(products_to_create)} products."
             )
         )

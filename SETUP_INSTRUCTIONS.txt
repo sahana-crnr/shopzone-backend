@@ -7,24 +7,24 @@ You need to install Python dependencies first.
 Option 1: Run the batch script (EASIEST)
 ────────────────────────────────────────
 Open Command Prompt and run:
-  
-  cd "C:\Users\Vasant\OneDrive\Desktop\react-login-ui\backend-repo"
+
+  cd path\to\backend-repo
   install-dependencies.bat
 
 Or double-click the file: install-dependencies.bat
 
 
 Option 2: Manual installation
-──────────────────────────────
+─────────────────────────────
 Open Command Prompt and run:
 
-  cd "C:\Users\Vasant\OneDrive\Desktop\react-login-ui\backend-repo"
+  cd path\to\backend-repo
   python -m pip install -r requirements.txt
 
 
 Option 3: Using pip directly
 ─────────────────────────────
-  pip install Django==6.0.4
+  pip install Django==6.0.6
   pip install djangorestframework==3.17.1
   pip install djangorestframework-simplejwt==5.5.1
   pip install django-cors-headers==4.9.0

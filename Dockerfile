@@ -1,15 +1,24 @@
-FROM python:3.12-slim
+# Use an official Python runtime as a parent image
+FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
+# Set the working directory in the container
 WORKDIR /app
 
-COPY requirements.txt ./
+# Install system dependencies required for psycopg2
+RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+
+# Copy the requirements file into the container
+COPY requirements.txt .
+
+# Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy the rest of the application's code into the container
 COPY . .
 
-EXPOSE 8000
-
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 4 --timeout 120"]
+# Copy entrypoint script
+COPY entrypoint.sh /

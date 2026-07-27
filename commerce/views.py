@@ -1,242 +1,318 @@
-from django.db import IntegrityError, transaction
-from rest_framework import generics, status
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from django.shortcuts import get_object_or_404
 from catalog.models import Product
-
-from .models import Cart, CartItem, Coupon, Order, OrderItem, WishlistItem
+from .models import Cart, CartItem, Coupon, Order, OrderItem, Wishlist, WishlistItem
 from .serializers import (
-    CartItemUpdateSerializer,
-    CartItemUpsertSerializer,
     CartSerializer,
-    CheckoutSerializer,
-    CouponCodeSerializer,
     CouponSerializer,
-    OrderSerializer,
-    WishlistItemCreateSerializer,
+    OrderSummarySerializer,
     WishlistItemSerializer,
 )
-
-
-def _cart_for_user(user):
-    return Cart.objects.get_or_create(user=user)[0]
-
-
-def _cart_queryset():
-    return Cart.objects.prefetch_related("items__product__tags")
-
-
-def _order_queryset():
-    return Order.objects.select_related("coupon").prefetch_related("items__product__tags")
 
 
 class CartView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        cart = _cart_queryset().filter(user=request.user).first() or _cart_for_user(
-            request.user
-        )
-        return Response(CartSerializer(cart).data)
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        serializer = CartSerializer(cart)
+        return Response(serializer.data)
 
     def post(self, request):
-        serializer = CartItemUpsertSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        product_id = request.data.get("product_id")
+        quantity = int(request.data.get("quantity", 1))
 
-        product = Product.objects.get(pk=serializer.validated_data["product_id"])
-        quantity = serializer.validated_data["quantity"]
-        cart = _cart_for_user(request.user)
+        if not product_id:
+            return Response(
+                {"detail": "product_id is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
+        product = get_object_or_404(Product, id=product_id)
         cart_item, created = CartItem.objects.get_or_create(
             cart=cart,
             product=product,
             defaults={"quantity": quantity},
         )
+
         if not created:
             cart_item.quantity += quantity
-            cart_item.save(update_fields=["quantity", "updated_at"])
+            cart_item.save()
 
-        cart = _cart_queryset().get(pk=cart.pk)
-        return Response(CartSerializer(cart).data, status=status.HTTP_201_CREATED)
+        serializer = CartSerializer(cart)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class CartItemDetailView(generics.UpdateAPIView, generics.DestroyAPIView):
+class CartItemDetailView(APIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = CartItemUpdateSerializer
-    http_method_names = ["patch", "delete", "options"]
 
-    def get_queryset(self):
-        return CartItem.objects.filter(cart__user=self.request.user)
+    def patch(self, request, item_id):
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        cart_item = CartItem.objects.filter(cart=cart, id=item_id).first()
+        if not cart_item:
+            cart_item = CartItem.objects.filter(cart=cart, product_id=item_id).first()
 
-    def patch(self, request, *args, **kwargs):
-        cart_item = self.get_object()
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        cart_item.quantity = serializer.validated_data["quantity"]
-        cart_item.save(update_fields=["quantity", "updated_at"])
+        if not cart_item:
+            return Response(
+                {"detail": "Cart item not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        quantity = int(request.data.get("quantity", 1))
+        if quantity <= 0:
+            cart_item.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        cart_item.quantity = quantity
+        cart_item.save()
         return Response({"id": cart_item.id, "quantity": cart_item.quantity})
+
+    def delete(self, request, item_id):
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        cart_item = CartItem.objects.filter(cart=cart, id=item_id).first()
+        if not cart_item:
+            cart_item = CartItem.objects.filter(cart=cart, product_id=item_id).first()
+
+        if cart_item:
+            cart_item.delete()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class WishlistView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        items = WishlistItem.objects.filter(user=request.user).select_related(
-            "product"
-        ).prefetch_related("product__tags")
-        return Response(WishlistItemSerializer(items, many=True).data)
+        wishlist, _ = Wishlist.objects.get_or_create(user=request.user)
+        items = wishlist.items.all().select_related("product")
+        serializer = WishlistItemSerializer(items, many=True)
+        return Response(serializer.data)
 
     def post(self, request):
-        serializer = WishlistItemCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        wishlist, _ = Wishlist.objects.get_or_create(user=request.user)
+        product_id = request.data.get("product_id")
 
-        product = Product.objects.get(pk=serializer.validated_data["product_id"])
-        try:
-            item, _created = WishlistItem.objects.get_or_create(
-                user=request.user,
-                product=product,
-            )
-        except IntegrityError:
-            item = WishlistItem.objects.get(user=request.user, product=product)
-
-        item = (
-            WishlistItem.objects.select_related("product")
-            .prefetch_related("product__tags")
-            .get(pk=item.pk)
-        )
-        return Response(
-            WishlistItemSerializer(item).data,
-            status=status.HTTP_201_CREATED,
-        )
-
-
-class WishlistItemDetailView(generics.DestroyAPIView):
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return WishlistItem.objects.filter(user=self.request.user)
-
-
-class CouponListView(generics.ListAPIView):
-    permission_classes = [IsAuthenticated]
-    serializer_class = CouponSerializer
-
-    def get_queryset(self):
-        return Coupon.objects.filter(is_active=True)
-
-
-class CouponValidateView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        serializer = CouponCodeSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        code = serializer.validated_data["code"].strip().upper()
-
-        try:
-            coupon = Coupon.objects.get(code__iexact=code, is_active=True)
-        except Coupon.DoesNotExist:
+        if not product_id:
             return Response(
-                {"detail": "Invalid discount code."},
+                {"detail": "product_id is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        return Response(CouponSerializer(coupon).data)
+        product = get_object_or_404(Product, id=product_id)
+        item, _ = WishlistItem.objects.get_or_create(
+            wishlist=wishlist,
+            product=product,
+        )
+
+        serializer = WishlistItemSerializer(item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class WishlistItemDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, item_id):
+        wishlist, _ = Wishlist.objects.get_or_create(user=request.user)
+        item = WishlistItem.objects.filter(wishlist=wishlist, id=item_id).first()
+        if not item:
+            item = WishlistItem.objects.filter(wishlist=wishlist, product_id=item_id).first()
+
+        if item:
+            item.delete()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CouponListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        coupons = Coupon.objects.filter(is_active=True)
+        serializer = CouponSerializer(coupons, many=True)
+        return Response(serializer.data)
+
+
+class ValidateCouponView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        code = request.data.get("code", "").strip()
+        if not code:
+            return Response(
+                {"detail": "Coupon code is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        coupon = Coupon.objects.filter(code__iexact=code, is_active=True).first()
+        if not coupon:
+            return Response(
+                {"detail": "Invalid or inactive discount code."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = CouponSerializer(coupon)
+        return Response(serializer.data)
 
 
 class CheckoutView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
     def post(self, request):
-        serializer = CheckoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        cart_items = cart.items.all().select_related("product")
 
-        cart = (
-            Cart.objects.select_for_update()
-            .filter(user=request.user)
-            .prefetch_related("items__product")
-            .first()
-        )
-        if not cart or not cart.items.exists():
+        if not cart_items.exists():
             return Response(
-                {"detail": "Cart is empty."},
+                {"detail": "Your cart is empty."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        items = list(cart.items.select_related("product"))
-        subtotal = sum(item.quantity * item.product.price for item in items)
+        shipping_address = request.data.get("shipping_address", "").strip()
+        if not shipping_address:
+            shipping_address = "Standard Delivery Address"
 
+        coupon_code = request.data.get("coupon_code", "").strip()
         coupon = None
-        coupon_code = serializer.validated_data.get("coupon_code")
+        discount_percent = 0
+
         if coupon_code:
-            try:
-                coupon = Coupon.objects.get(
-                    code__iexact=coupon_code.strip(),
-                    is_active=True,
-                )
-            except Coupon.DoesNotExist:
-                return Response(
-                    {"detail": "Invalid discount code."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            coupon = Coupon.objects.filter(code__iexact=coupon_code, is_active=True).first()
+            if coupon:
+                discount_percent = coupon.discount_percent
 
-            if subtotal < coupon.min_order_amount:
-                return Response(
-                    {
-                        "detail": (
-                            "This coupon requires a minimum order of "
-                            f"{coupon.min_order_amount}."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        discount_amount = 0
-        if coupon:
-            discount_amount = round(subtotal * coupon.discount_percent / 100)
+        subtotal = cart.get_total_price()
+        discount_amount = round((subtotal * discount_percent) / 100, 2)
+        total_amount = max(0, subtotal - discount_amount)
 
         order = Order.objects.create(
             user=request.user,
+            status="PENDING",
+            shipping_address=shipping_address,
             coupon=coupon,
-            shipping_address=serializer.validated_data["shipping_address"],
             subtotal=subtotal,
             discount_amount=discount_amount,
-            total_amount=subtotal - discount_amount,
+            total_amount=total_amount,
         )
 
-        order_items = [
-            OrderItem(
+        for item in cart_items:
+            OrderItem.objects.create(
                 order=order,
                 product=item.product,
                 product_name=item.product.name,
                 product_image=item.product.image,
                 unit_price=item.product.price,
                 quantity=item.quantity,
-                line_total=item.quantity * item.product.price,
             )
-            for item in items
-        ]
-        OrderItem.objects.bulk_create(order_items)
-        cart.items.all().delete()
 
-        order = _order_queryset().get(pk=order.pk)
-        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+        # Clear cart items after successful checkout
+        cart_items.delete()
+
+        serializer = OrderSummarySerializer(order)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class OrderListView(generics.ListAPIView):
+class OrderListView(APIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = OrderSerializer
 
-    def get_queryset(self):
-        return _order_queryset().filter(user=self.request.user)
+    def get(self, request):
+        orders = Order.objects.filter(user=request.user).order_by("-created_at")
+        serializer = OrderSummarySerializer(orders, many=True)
+        return Response(serializer.data)
 
 
-class OrderDetailView(generics.RetrieveAPIView):
+class OrderDetailView(APIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = OrderSerializer
 
-    def get_queryset(self):
-        return _order_queryset().filter(user=self.request.user)
+    def get(self, request, order_id):
+        order = get_object_or_404(Order, id=order_id, user=request.user)
+        serializer = OrderSummarySerializer(order)
+        return Response(serializer.data)
+
+
+class DeliveryOrdersListView(APIView):
+    """
+    Endpoint for Delivery Staff and Staff Admins to view all checkout orders.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user_roles = [r.role_name for r in request.user.roles.all()]
+        is_staff_or_delivery = (
+            request.user.is_staff
+            or any(r in user_roles for r in ["delivery_staff", "admin", "owner", "shop_manager", "inventory_manager"])
+        )
+        if not is_staff_or_delivery:
+            return Response(
+                {"detail": "Only delivery staff and system admins can access delivery orders."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        orders = Order.objects.all().order_by("-created_at")
+        serializer = OrderSummarySerializer(orders, many=True)
+        return Response(serializer.data)
+
+
+class AcceptDeliveryView(APIView):
+    """
+    Endpoint for Delivery Staff to accept a checkout order.
+    Changes status from PENDING to PROCESSING or SHIPPED.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, order_id):
+        user_roles = [r.role_name for r in request.user.roles.all()]
+        is_staff_or_delivery = (
+            request.user.is_staff
+            or any(r in user_roles for r in ["delivery_staff", "admin", "owner", "shop_manager"])
+        )
+        if not is_staff_or_delivery:
+            return Response(
+                {"detail": "Only delivery staff can accept deliveries."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        order = get_object_or_404(Order, id=order_id)
+        order.status = "SHIPPED"
+        order.save()
+
+        serializer = OrderSummarySerializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class UpdateOrderStatusView(APIView):
+    """
+    Endpoint to update order delivery status (e.g. SHIPPED -> DELIVERED).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, order_id):
+        user_roles = [r.role_name for r in request.user.roles.all()]
+        is_staff_or_delivery = (
+            request.user.is_staff
+            or any(r in user_roles for r in ["delivery_staff", "admin", "owner", "shop_manager"])
+        )
+        if not is_staff_or_delivery:
+            return Response(
+                {"detail": "Only delivery staff can update order status."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        new_status = request.data.get("status", "").upper()
+        valid_statuses = ["PENDING", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"]
+
+        if new_status not in valid_statuses:
+            return Response(
+                {"detail": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order = get_object_or_404(Order, id=order_id)
+        order.status = new_status
+        order.save()
+
+        serializer = OrderSummarySerializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -4,8 +4,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from django.shortcuts import get_object_or_404
 
-from .serializers import LoginSerializer, RegisterSerializer, UserSerializer
+from .models import Address
+from .serializers import AddressSerializer, LoginSerializer, RegisterSerializer, UserSerializer
 
 
 class RegisterView(APIView):
@@ -42,3 +44,33 @@ class UserProfileUpdateView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class AddressListView(generics.ListCreateAPIView):
+    serializer_class = AddressSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Address.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class AddressDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = AddressSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Address.objects.filter(user=self.request.user)
+
+
+class SetDefaultAddressView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        address = get_object_or_404(Address, pk=pk, user=request.user)
+        address.is_default = True
+        address.save()
+        serializer = AddressSerializer(address)
+        return Response(serializer.data, status=status.HTTP_200_OK)
