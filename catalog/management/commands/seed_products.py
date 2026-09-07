@@ -1,56 +1,45 @@
-import decimal
+import json
+from pathlib import Path
 
 from django.core.management.base import BaseCommand
+from django.db import transaction
 
 from catalog.models import Product
 
 
 class Command(BaseCommand):
-    help = "Seeds the database with an initial set of products."
+    help = "Synchronize the product catalog with catalog/data/products.json."
 
     def handle(self, *args, **options):
-        if Product.objects.exists():
-            self.stdout.write(self.style.SUCCESS("Products already seeded. Skipping."))
-            return
+        data_file = Path(__file__).resolve().parents[2] / "data" / "products.json"
+        with data_file.open(encoding="utf-8") as file:
+            products = json.load(file)
 
-        products_to_create = [
-            {
-                "name": "Classic Leather Jacket",
-                "description": "A timeless leather jacket for any occasion.",
-                "price": decimal.Decimal("199.99"),
-                "image": "images/products/leather_jacket.jpg",
-            },
-            {
-                "name": "Wireless Bluetooth Headphones",
-                "description": "High-fidelity sound with a 20-hour battery life.",
-                "price": decimal.Decimal("89.99"),
-                "image": "images/products/headphones.jpg",
-            },
-            {
-                "name": "Modern Minimalist Watch",
-                "description": "A sleek and stylish watch that complements any outfit.",
-                "price": decimal.Decimal("149.50"),
-                "image": "images/products/watch.jpg",
-            },
-            # Add more products here if you wish
-        ]
+        product_ids = [product["id"] for product in products]
+        with transaction.atomic():
+            # Keep database IDs equal to the IDs used by the frontend data file.
+            for item in products:
+                Product.objects.update_or_create(
+                    id=item["id"],
+                    defaults={
+                        "name": item["name"],
+                        "category": item.get("category", ""),
+                        "size": item.get("size", ""),
+                        "color": item.get("color", ""),
+                        "description": item.get("description", ""),
+                        "price": item["price"],
+                        "image": item.get("image", ""),
+                        "images": item.get("images", []),
+                        "original_price": item.get("originalPrice"),
+                        "rating": item.get("rating", 0),
+                        "ratings_count": item.get("ratingsCount", 0),
+                        "reviews_count": item.get("reviewsCount", 0),
+                    },
+                )
 
-        for product_data in products_to_create:
-            Product.objects.update_or_create(
-                name=product_data["name"],
-                defaults={
-                    "description": product_data["description"],
-                    "price": product_data["price"],
-                    "image": product_data["image"],
-                    # Ensure all rating and review counts start at 0
-                    "rating": 0,
-                    "ratings_count": 0,
-                    "reviews_count": 0,
-                },
-            )
+            # Keep only products explicitly supplied by products.json.
+            deleted, _ = Product.objects.exclude(id__in=product_ids).delete()
 
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Successfully created {len(products_to_create)} products."
-            )
-        )
+        self.stdout.write(self.style.SUCCESS(
+            f"Catalog synchronized: {len(products)} JSON products loaded; {deleted} old records removed."
+        ))

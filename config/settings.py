@@ -136,6 +136,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# PayU hosted checkout.  Keep these values in .env; never expose PAYU_SALT to
+# the browser.  The defaults are PayU's public test endpoint, not production.
+PAYU_KEY = os.getenv("PAYU_KEY", "")
+PAYU_SALT = os.getenv("PAYU_SALT", "")
+PAYU_PAYMENT_URL = os.getenv("PAYU_PAYMENT_URL", "https://test.payu.in/_payment")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+
 # django-allauth configuration
 SITE_ID = 1
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None

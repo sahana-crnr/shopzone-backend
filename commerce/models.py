@@ -78,15 +78,28 @@ class Order(models.Model):
         ("SHIPPED", "Shipped"),
         ("DELIVERED", "Delivered"),
         ("CANCELLED", "Cancelled"),
+        ("RETURN_REQUESTED", "Return Requested"),
+        ("RETURNED", "Returned"),
+    ]
+    PAYMENT_STATUS_CHOICES = [
+        ("INITIATED", "Initiated"),
+        ("SUCCESS", "Success"),
+        ("FAILED", "Failed"),
     ]
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="orders")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    cancellation_reason = models.TextField(blank=True, default="")
+    return_reason = models.TextField(blank=True, default="")
     shipping_address = models.TextField(blank=True, default="")
     coupon = models.ForeignKey(Coupon, on_delete=models.SET_NULL, null=True, blank=True)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default="INITIATED")
+    payment_transaction_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    payu_payment_id = models.CharField(max_length=100, blank=True, default="")
+    paid_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -98,6 +111,13 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
+    ITEM_STATUS_CHOICES = [
+        ("ACTIVE", "Active"),
+        ("CANCELLED", "Cancelled"),
+        ("RETURN_REQUESTED", "Return Requested"),
+        ("RETURNED", "Returned"),
+    ]
+
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
     
@@ -105,6 +125,9 @@ class OrderItem(models.Model):
     product_image = models.CharField(max_length=500, blank=True)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField()
+    status = models.CharField(max_length=20, choices=ITEM_STATUS_CHOICES, default="ACTIVE")
+    cancellation_reason = models.TextField(blank=True, default="")
+    return_reason = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "order_items"

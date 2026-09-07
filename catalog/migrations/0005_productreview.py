@@ -46,6 +46,7 @@ class Migration(migrations.Migration):
             ],
             options={
                 "ordering": ["-id"],
+                "db_table": "product_reviews",
             },
         ),
     ]

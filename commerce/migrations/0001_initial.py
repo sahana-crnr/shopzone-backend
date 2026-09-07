@@ -24,6 +24,7 @@ class Migration(migrations.Migration):
                 ('min_order_amount', models.DecimalField(blank=True, decimal_places=2, max_digits=10, null=True)),
                 ('is_active', models.BooleanField(default=True)),
             ],
+            options={'db_table': 'coupons'},
         ),
         migrations.CreateModel(
             name='Cart',
@@ -31,6 +32,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='cart', to=settings.AUTH_USER_MODEL)),
             ],
+            options={'db_table': 'carts'},
         ),
         migrations.CreateModel(
             name='CartItem',
@@ -40,6 +42,7 @@ class Migration(migrations.Migration):
                 ('cart', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='items', to='commerce.cart')),
                 ('product', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='catalog.product')),
             ],
+            options={'db_table': 'cart_items'},
         ),
         migrations.CreateModel(
             name='Order',
@@ -53,6 +56,7 @@ class Migration(migrations.Migration):
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='orders', to=settings.AUTH_USER_MODEL)),
             ],
+            options={'db_table': 'orders'},
         ),
         migrations.CreateModel(
             name='OrderItem',
@@ -65,6 +69,7 @@ class Migration(migrations.Migration):
                 ('order', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='items', to='commerce.order')),
                 ('product', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='catalog.product')),
             ],
+            options={'db_table': 'order_items'},
         ),
         migrations.CreateModel(
             name='Wishlist',
@@ -72,6 +77,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='wishlist', to=settings.AUTH_USER_MODEL)),
             ],
+            options={'db_table': 'wishlists'},
         ),
         migrations.CreateModel(
             name='WishlistItem',
@@ -80,5 +86,6 @@ class Migration(migrations.Migration):
                 ('product', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='catalog.product')),
                 ('wishlist', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='items', to='commerce.wishlist')),
             ],
+            options={'db_table': 'wishlist_items'},
         ),
     ]

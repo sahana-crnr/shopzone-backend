@@ -26,6 +26,7 @@ class Migration(migrations.Migration):
             ],
             options={
                 "ordering": ["name"],
+                "db_table": "product_tags",
             },
         ),
         migrations.AddField(

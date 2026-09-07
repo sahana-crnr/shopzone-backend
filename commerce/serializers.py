@@ -55,10 +55,23 @@ class OrderItemSerializer(serializers.ModelSerializer):
     productImage = serializers.CharField(source="product_image")
     unitPrice = serializers.DecimalField(source="unit_price", max_digits=10, decimal_places=2)
     lineTotal = serializers.SerializerMethodField()
+    cancellationReason = serializers.CharField(source="cancellation_reason", read_only=True)
+    returnReason = serializers.CharField(source="return_reason", read_only=True)
 
     class Meta:
         model = OrderItem
-        fields = ["id", "productId", "productName", "productImage", "unitPrice", "quantity", "lineTotal"]
+        fields = [
+            "id",
+            "productId",
+            "productName",
+            "productImage",
+            "unitPrice",
+            "quantity",
+            "lineTotal",
+            "status",
+            "cancellationReason",
+            "returnReason",
+        ]
 
     def get_lineTotal(self, obj):
         return obj.line_total()
@@ -72,8 +85,14 @@ class OrderSummarySerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    paymentStatus = serializers.CharField(source="payment_status", read_only=True)
+    paymentTransactionId = serializers.CharField(source="payment_transaction_id", read_only=True)
     customerName = serializers.SerializerMethodField()
     customerPhone = serializers.SerializerMethodField()
+    cancellationReason = serializers.CharField(source="cancellation_reason", read_only=True)
+    returnReason = serializers.CharField(source="return_reason", read_only=True)
+    canCancel = serializers.SerializerMethodField()
+    canReturn = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -83,6 +102,8 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             "customerPhone",
             "shippingAddress",
             "status",
+            "paymentStatus",
+            "paymentTransactionId",
             "coupon",
             "subtotal",
             "discountAmount",
@@ -90,6 +111,10 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             "items",
             "createdAt",
             "updatedAt",
+            "cancellationReason",
+            "returnReason",
+            "canCancel",
+            "canReturn",
         ]
 
     def get_customerName(self, obj):
@@ -97,3 +122,9 @@ class OrderSummarySerializer(serializers.ModelSerializer):
 
     def get_customerPhone(self, obj):
         return obj.user.phone if obj.user else ""
+
+    def get_canCancel(self, obj):
+        return obj.status in ["PENDING", "PROCESSING"]
+
+    def get_canReturn(self, obj):
+        return obj.status == "DELIVERED"

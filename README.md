@@ -35,6 +35,10 @@ Create a local `.env` file from `.env.example` and set the following values:
 | `DJANGO_DEBUG` | Enables or disables debug mode |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated list of allowed hostnames |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Comma-separated list of allowed frontend origins |
+| `PAYU_KEY` | PayU test merchant key from the PayU dashboard |
+| `PAYU_SALT` | Matching PayU test merchant salt; server-side only |
+| `PAYU_PAYMENT_URL` | PayU endpoint; defaults to `https://test.payu.in/_payment` |
+| `FRONTEND_URL` | URL to return the customer to after PayU completes payment |
 
 Example:
 
@@ -43,6 +47,10 @@ DJANGO_SECRET_KEY=change-me-to-a-long-random-development-secret-key
 DJANGO_DEBUG=True
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
 DJANGO_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+PAYU_KEY=your_payu_test_key
+PAYU_SALT=your_payu_test_salt
+PAYU_PAYMENT_URL=https://test.payu.in/_payment
+FRONTEND_URL=http://localhost:3000
 ```
 
 ## Local Setup
@@ -123,8 +131,10 @@ python manage.py test
 - `GET /api/coupons/`
 - `POST /api/coupons/validate/`
 - `POST /api/checkout/`
+- `POST /api/payments/payu/initiate/`
 - `GET /api/orders/`
 - `GET /api/orders/{id}/`
+- `GET /api/orders/{id}/invoice/` (available after a successful payment)
 
 ## Frontend Integration
 
@@ -145,4 +155,5 @@ http://127.0.0.1:3000
 - `python manage.py test` passes
 - `GET /api/products/` returns product data
 - Authenticated cart and wishlist requests return the current user's data only
-- Checkout creates an order and clears the cart
+- Checkout redirects to PayU's test gateway; the server verifies PayU's callback hash before marking the order paid and clearing its cart items
+- A paid order can download a PDF invoice from My Orders
