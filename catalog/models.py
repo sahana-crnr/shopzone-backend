@@ -31,6 +31,7 @@ class Product(models.Model):
         related_name="products",
         blank=True,
     )
+    is_featured = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -40,6 +41,31 @@ class Product(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Banner(models.Model):
+    title = models.CharField(max_length=200)
+    subtitle = models.CharField(max_length=300, blank=True)
+    image_url = models.CharField(max_length=500)
+    target_category = models.CharField(max_length=100, blank=True)
+    target_url = models.CharField(max_length=500, blank=True)
+    button_text = models.CharField(max_length=50, default="Shop Now")
+    badge = models.CharField(max_length=50, default="Exclusive Offer")
+    bg_gradient = models.CharField(
+        max_length=100,
+        default="from-slate-950 via-indigo-950 to-blue-900",
+        blank=True,
+    )
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "-id"]
+        db_table = "banners"
+
+    def __str__(self):
+        return self.title
 
 
 class ProductReview(models.Model):

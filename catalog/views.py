@@ -4,8 +4,8 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Product, ProductReview
-from .serializers import ProductSerializer, ProductReviewSerializer
+from .models import Product, ProductReview, Banner
+from .serializers import ProductSerializer, ProductReviewSerializer, BannerSerializer
 
 
 class CustomPageNumberPagination(PageNumberPagination):
@@ -133,3 +133,22 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
 
             serializer = ProductReviewSerializer(review)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def featured(self, request):
+        featured_products = list(Product.objects.filter(is_featured=True)[:8])
+        if len(featured_products) < 4:
+            existing_ids = {p.id for p in featured_products}
+            needed = 8 - len(featured_products)
+            fallback = Product.objects.exclude(id__in=existing_ids).order_by('-rating', '-ratings_count')[:needed]
+            featured_products.extend(list(fallback))
+
+        serializer = ProductSerializer(featured_products, many=True)
+        return Response(serializer.data)
+
+
+class BannerViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Banner.objects.filter(is_active=True).order_by('order', '-id')
+    serializer_class = BannerSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
